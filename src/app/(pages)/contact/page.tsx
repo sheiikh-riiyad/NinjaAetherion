@@ -1,0 +1,6 @@
+import type { Metadata } from "next";
+import { PageIntro } from "@/components/page-intro";
+import { ContactBrief } from "@/components/interactive-sections";
+import { SocialLinks } from "@/components/site-shell";
+export const metadata: Metadata = { title: "Start a Project | Ninja Aetherion", description: "Connect with Sheikh Riyad and prepare a brief for your next website or application." };
+export default function Contact() { return <><PageIntro label="LET’S MAKE IT HAPPEN" title="Big idea? Small hello." accent="Start right here." description="You don’t need a perfect plan. A problem to solve, an idea to explore, or a website that needs some attention is a great place to start." /><section className="wrap contact-page"><aside><p className="eyebrow">LET’S CONNECT</p><h2>A real person.<br /><span className="muted">A real conversation.</span></h2><p>Message me on LinkedIn or Facebook to discuss your project. You can also explore my code on GitHub.</p><SocialLinks /><div className="contact-guide"><span>✦</span><h3>A useful first hello</h3><p>Tell me what you want to build, who it’s for, and when you’d like to get started. The brief form can help organize your thoughts.</p></div></aside><ContactBrief /></section></>; }
