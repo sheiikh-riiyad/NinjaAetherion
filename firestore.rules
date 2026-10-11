@@ -1,0 +1,97 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true;
+    }
+    match /presence/{sessionId} {
+      allow read: if request.auth != null && (isAdmin() || resource.data.admin == true);
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasAll(['uid', 'admin', 'online', 'lastActiveAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'admin', 'online', 'lastActiveAt'])
+        && request.resource.data.uid == request.auth.uid
+        && (!exists(/databases/$(database)/documents/presence/$(sessionId)) || resource.data.uid == request.auth.uid)
+        && request.resource.data.admin == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin
+        && request.resource.data.online is bool
+        && request.resource.data.lastActiveAt == request.time;
+      allow delete: if false;
+    }
+    match /users/{userId} {
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow create: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.keys().hasAll(['email', 'name', 'admin', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['email', 'name', 'admin', 'createdAt'])
+        && request.resource.data.admin == false
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.createdAt == request.time;
+      allow update: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 100;
+      allow delete: if false;
+      match /chatReads/{readerId} {
+        function canReadChat() {
+          return request.auth != null && request.auth.uid == readerId
+            && (request.auth.uid == userId || isAdmin());
+        }
+        allow read: if canReadChat();
+        allow create: if canReadChat()
+          && request.resource.data.keys().hasAll(['lastReadAt'])
+          && request.resource.data.keys().hasOnly(['lastReadAt'])
+          && request.resource.data.lastReadAt is timestamp
+          && request.resource.data.lastReadAt <= request.time;
+        allow update: if canReadChat()
+          && request.resource.data.keys().hasOnly(['lastReadAt'])
+          && request.resource.data.lastReadAt is timestamp
+          && request.resource.data.lastReadAt <= request.time
+          && request.resource.data.lastReadAt >= resource.data.lastReadAt;
+        allow delete: if false;
+      }
+      match /messages/{messageId} {
+        function canChat() {
+          return request.auth != null && (request.auth.uid == userId || isAdmin());
+        }
+        function validReply() {
+          let reply = request.resource.data.reply;
+          return reply is map
+            && reply.keys().hasAll(['messageId', 'text', 'senderId'])
+            && reply.keys().hasOnly(['messageId', 'text', 'senderId'])
+            && reply.messageId is string
+            && reply.messageId.size() <= 128
+            && reply.messageId.matches('^[^/]+$')
+            && reply.text is string
+            && reply.senderId is string
+            && exists(/databases/$(database)/documents/users/$(userId)/messages/$(reply.messageId))
+            && reply.text == get(/databases/$(database)/documents/users/$(userId)/messages/$(reply.messageId)).data.text
+            && reply.senderId == get(/databases/$(database)/documents/users/$(userId)/messages/$(reply.messageId)).data.senderId;
+        }
+        function validAttachment() {
+          let file = request.resource.data.attachment;
+          return file is map
+            && file.keys().hasAll(['path', 'name', 'size', 'type'])
+            && file.keys().hasOnly(['path', 'name', 'size', 'type'])
+            && file.path == 'chat/' + userId + '/' + request.auth.uid + '/' + messageId + '/attachment'
+            && file.name is string && file.name.size() > 0 && file.name.size() <= 255
+            && file.type is string && file.type.size() > 0 && file.type.size() <= 255
+            && file.size is int && file.size > 0 && file.size <= 20 * 1024 * 1024;
+        }
+        allow read: if canChat();
+        allow create: if canChat()
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && request.resource.data.keys().hasAll(['text', 'senderId', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['text', 'senderId', 'createdAt', 'reply', 'attachment'])
+          && (!('reply' in request.resource.data) || validReply())
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.text is string
+          && (request.resource.data.text.size() > 0 || 'attachment' in request.resource.data)
+          && (!('attachment' in request.resource.data) || validAttachment())
+          && request.resource.data.text.size() <= 2000
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+  }
+}

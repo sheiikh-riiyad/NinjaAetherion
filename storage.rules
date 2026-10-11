@@ -1,0 +1,17 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function canChat(clientId) {
+      return request.auth != null && (request.auth.uid == clientId ||
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.admin == true);
+    }
+    match /chat/{clientId}/{senderId}/{messageId}/attachment {
+      allow read: if canChat(clientId);
+      allow create: if canChat(clientId) && request.auth.uid == senderId
+        && firestore.exists(/databases/(default)/documents/users/$(clientId))
+        && request.resource.size > 0 && request.resource.size <= 20 * 1024 * 1024
+        && request.resource.contentType.size() <= 255;
+      allow update, delete: if false;
+    }
+  }
+}

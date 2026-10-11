@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { useAuth } from "@/components/auth-provider";
+import { UnreadBadge } from "@/components/unread-provider";
 
 export const socials = [
   { name: "GitHub", href: "https://github.com/sheiikh-riiyad" },
@@ -11,12 +13,15 @@ export const socials = [
 ];
 
 export function SiteHeader() {
+  const { user } = useAuth();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   return <header className="header wrap">
     <Link className="brand" href="/" aria-label="Ninja Aetherion home"><span className="brand-mark">✦</span><span>NINJA<span className="brand-sub">AETHERION<span className="cyan">.dev</span></span></span></Link>
     <button className="menu-toggle" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="site-navigation">{open ? "Close ×" : "Menu ☰"}</button>
     <nav id="site-navigation" className={`navigation site-navigation${open ? " open" : ""}`} aria-label="Main navigation">
+      <Link href="/account" aria-current={pathname === "/account" ? "page" : undefined} onClick={() => setOpen(false)}>{user ? "My account" : "Sign in"}</Link>
+      {user && <Link href="/messages" aria-current={pathname === "/messages" ? "page" : undefined} onClick={() => setOpen(false)}>Messages <UnreadBadge /></Link>}
       {[["Work", "/projects"], ["Services", "/services"], ["About", "/about"], ["Playground", "/playground"]].map(([name, href]) => <Link key={href} href={href} aria-current={pathname.startsWith(href) ? "page" : undefined} onClick={() => setOpen(false)}>{name}</Link>)}
     </nav>
     <Link className="nav-cta" href="/contact" onClick={() => setOpen(false)}>Let’s talk <span>↗</span></Link>
