@@ -11,31 +11,125 @@ service cloud.firestore {
     function validOrderUrl(url) {
       return url is string && url.size() <= 2000 && (url == '' || url.matches('^https?://.+'));
     }
+    function verifiedInstallment(orderId, index) {
+      return exists(/databases/$(database)/documents/orders/$(orderId)/cryptoPayments/$(index))
+        && get(/databases/$(database)/documents/orders/$(orderId)/cryptoPayments/$(index)).data.status == 'verified';
+    }
+    match /payment/binance {
+      allow read: if request.auth != null;
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasAll(['address', 'trc20Address', 'bep20Address', 'polygonAddress', 'coin', 'usdRate', 'bdtRate', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['address', 'trc20Address', 'bep20Address', 'polygonAddress', 'coin', 'usdRate', 'bdtRate', 'updatedAt'])
+        && request.resource.data.address is string && request.resource.data.address.size() <= 128
+        && request.resource.data.trc20Address is string && (request.resource.data.trc20Address == '' || request.resource.data.trc20Address.matches('^T[1-9A-HJ-NP-Za-km-z]{33}$'))
+        && request.resource.data.bep20Address is string && (request.resource.data.bep20Address == '' || request.resource.data.bep20Address.matches('^0x[a-fA-F0-9]{40}$'))
+        && request.resource.data.polygonAddress is string && (request.resource.data.polygonAddress == '' || request.resource.data.polygonAddress.matches('^0x[a-fA-F0-9]{40}$'))
+        && request.resource.data.coin == 'USDT'
+        && request.resource.data.usdRate == 1
+        && request.resource.data.bdtRate is number && request.resource.data.bdtRate >= 0 && request.resource.data.bdtRate <= 1000000000
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+    match /cryptoTransactions/{transactionId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasAll(['orderId', 'installment', 'network', 'txid', 'verifiedAt'])
+        && request.resource.data.keys().hasOnly(['orderId', 'installment', 'network', 'txid', 'verifiedAt'])
+        && request.resource.data.orderId is string && request.resource.data.orderId.matches('^[^/]+$')
+        && request.resource.data.installment is int && request.resource.data.installment >= 0 && request.resource.data.installment <= 2
+        && request.resource.data.network in ['TRC20', 'BEP20', 'Polygon']
+        && request.resource.data.txid is string && request.resource.data.txid.matches('^[a-f0-9]{64}$')
+        && transactionId == request.resource.data.network + '_' + request.resource.data.txid
+        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)/cryptoPayments/$(request.resource.data.installment)).data.status == 'verified'
+        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)/cryptoPayments/$(request.resource.data.installment)).data.txid == request.resource.data.txid
+        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)/cryptoPayments/$(request.resource.data.installment)).data.network == request.resource.data.network
+        && request.resource.data.verifiedAt == request.time;
+      allow update, delete: if false;
+    }
     match /orders/{orderId} {
       function owner() { return request.auth != null && resource.data.clientId == request.auth.uid; }
       allow read: if owner() || isAdmin();
       allow create: if request.auth != null && !isAdmin()
-        && request.resource.data.keys().hasAll(['clientId', 'clientName', 'service', 'title', 'description', 'budget', 'deadline', 'referenceUrl', 'status', 'update', 'deliveryUrl', 'createdAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['clientId', 'clientName', 'service', 'title', 'description', 'budget', 'deadline', 'referenceUrl', 'status', 'update', 'deliveryUrl', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasAll(['clientId', 'clientName', 'service', 'title', 'description', 'budget', 'budgetMinor', 'currency', 'paymentMode', 'deadline', 'referenceUrl', 'status', 'update', 'deliveryUrl', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['clientId', 'clientName', 'service', 'title', 'description', 'budget', 'budgetMinor', 'currency', 'paymentMode', 'deadline', 'referenceUrl', 'status', 'update', 'deliveryUrl', 'createdAt', 'updatedAt'])
         && request.resource.data.clientId == request.auth.uid
         && request.resource.data.clientName == (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name == '' ? 'Client' : get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name)
-        && request.resource.data.service in ['Website', 'Redesign', 'Bug fix', 'Custom project']
+        && request.resource.data['service'] in ['Website', 'Redesign', 'Bug fix', 'Custom project']
         && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 150
         && request.resource.data.description is string && request.resource.data.description.size() > 0 && request.resource.data.description.size() <= 4000
         && request.resource.data.budget is string && request.resource.data.budget.size() <= 100
+        && request.resource.data.budgetMinor is int && request.resource.data.budgetMinor >= 100 && request.resource.data.budgetMinor <= 99999999
+        && request.resource.data.currency in ['USD', 'BDT'] && request.resource.data.paymentMode == 'crypto'
         && request.resource.data.deadline is string && (request.resource.data.deadline == '' || request.resource.data.deadline.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))
         && validOrderUrl(request.resource.data.referenceUrl)
         && request.resource.data.status == 'Requested' && request.resource.data.update == '' && request.resource.data.deliveryUrl == ''
         && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
       allow update: if isAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'update', 'deliveryUrl', 'updatedAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'update', 'deliveryUrl', 'updatedAt', 'budget', 'budgetMinor', 'currency', 'paymentMode'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['budget', 'budgetMinor', 'currency', 'paymentMode']) || (resource.data.get('paymentMode', 'demo') != 'crypto'
+          && request.resource.data.paymentMode == 'crypto' && request.resource.data.currency in ['USD', 'BDT']
+          && request.resource.data.budgetMinor is int && request.resource.data.budgetMinor >= 100 && request.resource.data.budgetMinor <= 99999999
+          && request.resource.data.budget is string && request.resource.data.budget.size() <= 100))
         && request.resource.data.status in ['Requested', 'Accepted', 'Building', 'Review', 'Delivered']
         && stageRank(request.resource.data.status) >= stageRank(resource.data.status)
         && stageRank(request.resource.data.status) <= stageRank(resource.data.status) + 1
+        && (request.resource.data.status == resource.data.status || resource.data.get('paymentMode', 'demo') != 'crypto' || request.resource.data.status == 'Requested' || verifiedInstallment(orderId, '0'))
+        && (request.resource.data.status == resource.data.status || resource.data.get('paymentMode', 'demo') != 'crypto' || request.resource.data.status != 'Delivered' || verifiedInstallment(orderId, '1'))
         && request.resource.data.update is string && request.resource.data.update.size() > 0 && request.resource.data.update.size() <= 2000
         && validOrderUrl(request.resource.data.deliveryUrl)
         && request.resource.data.updatedAt == request.time;
       allow delete: if false;
+      match /cryptoPayments/{installmentId} {
+        function order() { return get(/databases/$(database)/documents/orders/$(orderId)).data; }
+        function canRead() { return request.auth != null && (order().clientId == request.auth.uid || isAdmin()); }
+        function due() {
+          return installmentId == '0' || (installmentId == '1' && verifiedInstallment(orderId, '0') && order().status in ['Review', 'Delivered'])
+            || (installmentId == '2' && verifiedInstallment(orderId, '0') && verifiedInstallment(orderId, '1') && order().status == 'Delivered');
+        }
+        function expectedAmount() {
+          let total = order().budgetMinor;
+          return installmentId == '0' ? math.round(total * 0.2) : installmentId == '1' ? math.round(total * 0.5) : total - math.round(total * 0.2) - math.round(total * 0.5);
+        }
+        function validScreenshotPath(path) {
+          let parts = path.split('/');
+          return parts.size() == 6 && parts[0] == 'paymentProofs' && parts[1] == orderId
+            && parts[2] == request.auth.uid && parts[3] == installmentId
+            && parts[4].matches('^[a-zA-Z0-9]{20}$') && parts[5] == 'screenshot';
+        }
+        function validSubmission() {
+          let data = request.resource.data;
+          let wallet = get(/databases/$(database)/documents/payment/binance).data;
+          let field = data.network == 'TRC20' ? 'trc20Address' : data.network == 'BEP20' ? 'bep20Address' : 'polygonAddress';
+          let address = wallet[field] == '' ? wallet.address : wallet[field];
+          let rate = order().currency == 'USD' ? wallet.usdRate : wallet.bdtRate;
+          return request.auth != null && order().clientId == request.auth.uid && order().paymentMode == 'crypto'
+            && installmentId in ['0', '1', '2'] && due()
+            && data.keys().hasAll(['clientId', 'installment', 'status', 'amountMinor', 'currency', 'coin', 'network', 'address', 'cryptoAmount', 'rate', 'txid', 'screenshot', 'createdAt'])
+            && data.keys().hasOnly(['clientId', 'installment', 'status', 'amountMinor', 'currency', 'coin', 'network', 'address', 'cryptoAmount', 'rate', 'txid', 'screenshot', 'createdAt'])
+            && data.clientId == request.auth.uid && data.installment is int && string(data.installment) == installmentId
+            && data.status == 'pending' && data.amountMinor == expectedAmount() && data.currency == order().currency
+            && data.network in ['TRC20', 'BEP20', 'Polygon'] && data.coin == wallet.coin && data.address == address
+            && (data.network == 'TRC20' ? data.address.matches('^T[1-9A-HJ-NP-Za-km-z]{33}$') : data.address.matches('^0x[a-fA-F0-9]{40}$'))
+            && data.rate == rate && rate > 0 && data.cryptoAmount is number && data.cryptoAmount > 0
+            && data.cryptoAmount >= expectedAmount() / 100.0 / rate - 0.000000001
+            && data.cryptoAmount <= expectedAmount() / 100.0 / rate + 0.000001
+            && data.txid is string && data.txid.matches('^[a-f0-9]{64}$')
+            && data.screenshot is map && data.screenshot.keys().hasAll(['path', 'name', 'size', 'type']) && data.screenshot.keys().hasOnly(['path', 'name', 'size', 'type'])
+            && data.screenshot.path is string && validScreenshotPath(data.screenshot.path)
+            && data.screenshot.name is string && data.screenshot.name.size() > 0 && data.screenshot.name.size() <= 255
+            && data.screenshot.size is int && data.screenshot.size > 0 && data.screenshot.size <= 5 * 1024 * 1024
+            && data.screenshot.type in ['image/png', 'image/jpeg', 'image/webp'] && data.createdAt == request.time;
+        }
+        allow read: if canRead();
+        allow create: if validSubmission();
+        allow update: if (resource.data.status == 'rejected' && validSubmission()) || (isAdmin() && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt'])
+          && request.resource.data.reviewedAt == request.time
+          && (request.resource.data.status == 'rejected' || (request.resource.data.status == 'verified'
+            && getAfter(/databases/$(database)/documents/cryptoTransactions/$(resource.data.network + '_' + resource.data.txid)).data.orderId == orderId
+            && getAfter(/databases/$(database)/documents/cryptoTransactions/$(resource.data.network + '_' + resource.data.txid)).data.installment == resource.data.installment)));
+        allow delete: if false;
+      }
       match /updates/{updateId} {
         allow read: if request.auth != null && (isAdmin() || get(/databases/$(database)/documents/orders/$(orderId)).data.clientId == request.auth.uid);
         allow create: if isAdmin()

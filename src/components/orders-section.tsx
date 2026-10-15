@@ -4,15 +4,16 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, writeBatch, type Timestamp } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
-import { DemoPayment } from "@/components/demo-payment";
-import { InstallmentSummary, OrderPaymentPlan, useInstallmentReceipts } from "@/components/installment-payments";
+import { CryptoPaymentPlan, CryptoWalletEditor, EnableLegacyCrypto, useWalletSettings } from "@/components/crypto-payments";
+import { InstallmentSummary, money } from "@/components/installment-payments";
+import { CRYPTO_NETWORKS, cryptoQuote, walletAddress } from "@/lib/crypto-payment";
 import { demoAmountMinor } from "@/lib/demo-payment";
-import { installmentKey, installments, parseOrderBudget, type Currency } from "@/lib/installments";
+import { type Currency } from "@/lib/installments";
 import { getFirebase } from "@/lib/firebase";
 import { publicWorkUrl } from "@/lib/people";
 import { canAdvanceOrder, clientLevel, ORDER_SERVICES, ORDER_STAGES, type OrderStage } from "@/lib/orders";
 
-type Order = { id: string; clientId: string; clientName: string; service: string; title: string; description: string; budget: string; deadline: string; referenceUrl: string; status: OrderStage; update: string; deliveryUrl: string; createdAt: Timestamp | null; updatedAt: Timestamp | null };
+type Order = { id: string; clientId: string; clientName: string; service: string; title: string; description: string; budget: string; budgetMinor?: number; currency?: Currency; paymentMode?: "crypto"; deadline: string; referenceUrl: string; status: OrderStage; update: string; deliveryUrl: string; createdAt: Timestamp | null; updatedAt: Timestamp | null };
 type Review = { id: string; clientId: string; clientName: string; workRating: number; websiteRating: number; text: string; public: boolean; createdAt: Timestamp | null };
 type Update = { id: string; status: OrderStage; note: string; createdAt: Timestamp | null };
 function date(timestamp: Timestamp | null) { return timestamp ? timestamp.toDate().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Saving..."; }
@@ -31,6 +32,7 @@ function OrderDashboard({ uid, name, admin }: { uid: string; name: string; admin
   const [create, setCreate] = useState(false);
   const [selected, setSelected] = useState("");
   const [filter, setFilter] = useState("All");
+  const [paymentFirst, setPaymentFirst] = useState("");
   useEffect(() => {
     const source = collection(getFirebase().db, "orders");
     return onSnapshot(admin ? source : query(source, where("clientId", "==", uid)), snapshot => setState({ orders: snapshot.docs.map(item => ({ ...item.data(), id: item.id } as Order)).sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)), loading: false, error: "" }), () => setState({ orders: [], loading: false, error: "Unable to load orders. Please check your connection and reload." }));
@@ -40,24 +42,26 @@ function OrderDashboard({ uid, name, admin }: { uid: string; name: string; admin
   const active = state.orders.find(order => order.id === selected);
   const visible = state.orders.filter(order => filter === "All" || order.status === filter);
   return <>
+    {admin && <CryptoWalletEditor />}
     <div className="orders-toolbar"><div><p className="eyebrow">{admin ? "PROJECT CONTROL" : "MADE FOR YOU"}</p><h2>{admin ? "Manage orders" : "My orders"}</h2></div>{!admin && <button className="button primary" aria-expanded={create} onClick={() => setCreate(!create)}>{create ? "Close form" : "+ Create order"}</button>}</div>
     {!admin && <div className="client-level"><span className="level-mark" aria-hidden="true">{completed >= 5 ? "III" : completed >= 2 ? "II" : "I"}</span><div><strong>{level.name}</strong><p>{completed} completed project{completed === 1 ? "" : "s"}{level.next ? ` · ${level.remaining} more to become a ${level.next}` : " · Thank you for building with me."}</p><progress value={level.progress} max={100} aria-label="Client level progress" /></div></div>}
-    {create && !admin && <CreateOrder uid={uid} name={name} done={id => { setCreate(false); setSelected(id); }} />}
+    {create && !admin && <CreateOrder uid={uid} name={name} done={id => { setCreate(false); setSelected(id); setPaymentFirst(id); }} />}
     <div className="filter-row orders-filters" aria-label="Filter orders">{["All", ...ORDER_STAGES].map(stage => <button key={stage} aria-pressed={filter === stage} onClick={() => setFilter(stage)}>{stage}</button>)}</div>
     {state.loading && <p role="status">Loading orders...</p>}{state.error && <p className="orders-error" role="alert">{state.error}</p>}
     {!state.loading && !state.error && !visible.length && <div className="orders-welcome"><h3>{filter === "All" ? "A blank page. A world of possibilities." : `No ${filter.toLowerCase()} orders yet.`}</h3><p>{admin ? "Client requests will appear here." : "Tell me what you would like to build using Create order."}</p></div>}
     <div className="order-cards">{visible.map(order => <button className="order-card" key={order.id} aria-pressed={selected === order.id} onClick={() => setSelected(order.id)}><div><span className="order-service">{order.service}</span><span className={`order-status status-${order.status.toLowerCase()}`}>{order.status}</span></div><h3>{order.title}</h3><p>{admin ? `${order.clientName} · ` : ""}Started {date(order.createdAt)}</p><progress max={4} value={ORDER_STAGES.indexOf(order.status)} aria-label={`${order.status}: stage ${ORDER_STAGES.indexOf(order.status) + 1} of 5`} /><span className="order-card-update">{order.update || "Your request is in. I will review the details soon."}</span><span className="order-card-link">View details →</span></button>)}</div>
-    {active && <OrderDetails key={active.id} order={active} admin={admin} uid={uid} close={() => setSelected("")} />}
+    {active && <OrderDetails key={active.id} order={active} admin={admin} uid={uid} initialTab={active.id === paymentFirst ? "Payments" : "Overview"} close={() => setSelected("")} />}
   </>;
 }
 
 function CreateOrder({ uid, name, done }: { uid: string; name: string; done: (id: string) => void }) {
   const [draftId] = useState(() => doc(collection(getFirebase().db, "orders")).id);
-  const [budget, setBudget] = useState("10000.00");
-  const [currency, setCurrency] = useState<Currency>("BDT");
+  const [budget, setBudget] = useState("");
+  const [currency, setCurrency] = useState<Currency>("USD");
   const total = demoAmountMinor(budget);
   const validBudget = total !== null && total >= 100;
-  const paid = useInstallmentReceipts(draftId, total || 0, currency, uid);
+  const wallet = useWalletSettings();
+  const walletReady = !wallet.loading && !!wallet.settings && wallet.settings.coin === "USDT" && wallet.settings.usdRate === 1 && CRYPTO_NETWORKS.some(network => walletAddress(wallet.settings!, network)) && !!cryptoQuote(total || 0, currency, wallet.settings);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -66,13 +70,13 @@ function CreateOrder({ uid, name, done }: { uid: string; name: string; done: (id
     const title = String(data.get("title") || "").trim(); const description = String(data.get("description") || "").trim();
     const referenceUrl = String(data.get("referenceUrl") || "").trim();
     if (!validBudget) { setError("Enter a project budget from 1.00 to 999,999.99."); return; }
-    if (!paid[0]) { setError("Complete the 20% upfront demo payment before submitting."); return; }
+    if (!walletReady) { setError("Crypto checkout is not configured for this currency yet. Contact Riyad before sending money."); return; }
     if (!title || !description) { setError("Enter a title and project description."); return; }
     if (referenceUrl && !publicWorkUrl(referenceUrl)) { setError("Enter a full HTTP or HTTPS reference URL."); return; }
     setBusy(true); setError("");
     try {
       const reference = doc(getFirebase().db, "orders", draftId);
-      await setDoc(reference, { clientId: uid, clientName: name || "Client", service: String(data.get("service")), title, description, budget: `${currency} ${(total! / 100).toFixed(2)}`, deadline: String(data.get("deadline") || ""), referenceUrl, status: "Requested", update: "", deliveryUrl: "", createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      await setDoc(reference, { clientId: uid, clientName: name || "Client", service: String(data.get("service")), title, description, budget: `${currency} ${(total! / 100).toFixed(2)}`, budgetMinor: total, currency, paymentMode: "crypto", deadline: String(data.get("deadline") || ""), referenceUrl, status: "Requested", update: "", deliveryUrl: "", createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
       done(reference.id);
     } catch { setError("Your order was not submitted. Please try again."); }
     finally { setBusy(false); }
@@ -86,26 +90,28 @@ function CreateOrder({ uid, name, done }: { uid: string; name: string; done: (id
     <label>Reference link (optional)<input type="url" name="referenceUrl" maxLength={2000} placeholder="https://..." /></label>
     <p className="order-hint">You can send reference files and images through the project chat after submitting.</p>
   </fieldset></form>
-    {validBudget ? <><InstallmentSummary total={total!} currency={currency} /><div className="demo-payment-notice">Complete the 20% deposit simulation to submit this test order. No real money is collected.</div>{paid[0] ? <p className="profile-success" role="status">20% upfront demo payment complete. You can submit your order.</p> : !busy && <DemoPayment key={installmentKey(draftId, 0, total!, currency)} orderId={installmentKey(draftId, 0, total!, currency)} title="New project - 20% upfront deposit" ownerKey={uid} fixedAmountMinor={installments(total!)[0]} fixedCurrency={currency} />}</> : <p className="orders-error">Enter a numeric budget of at least 1.00 to see your payment plan.</p>}
-    <button form={`create-order-${draftId}`} className="button primary" disabled={busy || !validBudget || !paid[0]}>{busy ? "Submitting..." : "Submit order after demo deposit"}</button>
+    {validBudget ? <><InstallmentSummary total={total!} currency={currency} /><div className="crypto-notice">Pay the 20% deposit by crypto after saving this order. The next screen shows your receiving address and lets you attach a screenshot and transaction hash. Work starts after Riyad verifies the transfer.</div></> : <p className="orders-error">Enter a numeric budget of at least 1.00 to see your payment plan.</p>}
+    {wallet.loading && <p role="status">Loading crypto checkout settings...</p>}
+    {!wallet.loading && !walletReady && <p role="alert" className="orders-error">{wallet.error || "Crypto checkout is not configured for this currency yet. Contact Riyad before sending funds."}</p>}
+    <button form={`create-order-${draftId}`} className="button primary" disabled={busy || !validBudget || !walletReady}>{busy ? "Saving order..." : "Continue to 20% crypto deposit"}</button>
     {error && <p className="orders-error" role="alert">{error}</p>}</section>;
 }
 
-function OrderDetails({ order, admin, uid, close }: { order: Order; admin: boolean; uid: string; close: () => void }) {
+function OrderDetails({ order, admin, uid, close, initialTab = "Overview" }: { order: Order; admin: boolean; uid: string; close: () => void; initialTab?: string }) {
   const panel = useRef<HTMLElement>(null);
   useEffect(() => { panel.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, []);
-  const [tab, setTab] = useState("Overview");
+  const [tab, setTab] = useState(initialTab);
   const [updates, setUpdates] = useState<Update[]>([]);
   const [error, setError] = useState("");
   useEffect(() => onSnapshot(query(collection(getFirebase().db, "orders", order.id, "updates"), orderBy("createdAt", "asc")), snapshot => { setUpdates(snapshot.docs.map(item => ({ ...item.data(), id: item.id } as Update))); setError(""); }, () => setError("Project updates could not be loaded.")), [order.id]);
-  const paymentBudget = parseOrderBudget(order.budget);
+  const paymentBudget = order.paymentMode === "crypto" && order.budgetMinor && order.currency ? { total: order.budgetMinor, currency: order.currency } : null;
   const chatHref = admin ? `/messages?client=${encodeURIComponent(order.clientId)}` : "/messages";
   return <section ref={panel} className="order-detail" aria-label={`Order details: ${order.title}`}>
     <header><div><p className="eyebrow">ORDER #{order.id.slice(-8).toUpperCase()}</p><h2>{order.title}</h2><p>{order.clientName} · {order.service}</p></div><button className="auth-secondary" onClick={close}>Close details</button></header>
     <ol className="order-timeline" aria-label="Project stages">{ORDER_STAGES.map((stage, index) => <li key={stage} className={index <= ORDER_STAGES.indexOf(order.status) ? "is-complete" : ""} aria-current={stage === order.status ? "step" : undefined}><span>{index < ORDER_STAGES.indexOf(order.status) ? "✓" : index + 1}</span>{stage}</li>)}</ol>
     <div className="filter-row" aria-label="Order detail tabs">{["Overview", "Progress", "Files", "Messages", "Payments"].map(value => <button key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{value}</button>)}</div>
-    {tab === "Payments" && (paymentBudget ? <OrderPaymentPlan orderId={order.id} title={order.title} total={paymentBudget.total} currency={paymentBudget.currency} ownerKey={uid} status={order.status} admin={admin} /> : <div className="order-latest"><h3>Budget not set for installments</h3><p>This older order needs a numeric budget with a currency before a payment plan can be calculated. Ask Riyad to confirm the project budget.</p></div>)}
-    {tab === "Overview" && <div className="order-overview"><p>{order.description}</p><dl><div><dt>Budget</dt><dd>{order.budget || "To be discussed"}</dd></div><div><dt>Preferred deadline</dt><dd>{order.deadline || "Flexible"}</dd></div><div><dt>Requested</dt><dd>{date(order.createdAt)}</dd></div></dl>{publicWorkUrl(order.referenceUrl) && <a className="text-link" href={publicWorkUrl(order.referenceUrl)} target="_blank" rel="noopener noreferrer">Open reference ↗</a>}<div className="order-latest"><strong>Latest update</strong><p>{order.update || "Your request is waiting for review."}</p></div></div>}
+    {tab === "Payments" && (paymentBudget ? <CryptoPaymentPlan orderId={order.id} total={paymentBudget.total} currency={paymentBudget.currency} uid={uid} clientId={order.clientId} status={order.status} admin={admin} /> : admin ? <EnableLegacyCrypto orderId={order.id} budget={order.budget} status={order.status} /> : <div className="order-latest"><h3>Crypto payments are not enabled yet</h3><p>Ask Riyad to confirm the budget and enable crypto installments for this older order. Previous demo receipts are not payments.</p></div>)}
+    {tab === "Overview" && <div className="order-overview"><p>{order.description}</p><dl><div><dt>Budget</dt><dd>{paymentBudget ? money(paymentBudget.total, paymentBudget.currency) : order.budget || "To be discussed"}</dd></div><div><dt>Preferred deadline</dt><dd>{order.deadline || "Flexible"}</dd></div><div><dt>Requested</dt><dd>{date(order.createdAt)}</dd></div></dl>{publicWorkUrl(order.referenceUrl) && <a className="text-link" href={publicWorkUrl(order.referenceUrl)} target="_blank" rel="noopener noreferrer">Open reference ↗</a>}<div className="order-latest"><strong>Latest update</strong><p>{order.update || "Your request is waiting for review."}</p></div></div>}
     {tab === "Progress" && <div className="order-updates"><article><time>{date(order.createdAt)}</time><h3>Requested</h3><p>Your project request was submitted.</p></article>{updates.map(update => <article key={update.id}><time>{date(update.createdAt)}</time><h3>{update.status}</h3><p>{update.note}</p></article>)}{error && <p role="alert" className="orders-error">{error}</p>}</div>}
     {tab === "Files" && <div className="order-latest"><h3>Previews & delivery</h3>{publicWorkUrl(order.deliveryUrl) ? <a className="button primary" href={publicWorkUrl(order.deliveryUrl)} target="_blank" rel="noopener noreferrer">Open project / delivery ↗</a> : <p>Your project link will appear here when it is ready.</p>}<p>Share and download project files in your conversation with Riyad.</p><Link className="auth-secondary" href={chatHref}>Open file sharing</Link></div>}
     {tab === "Messages" && <div className="order-latest"><h3>Let&apos;s talk about your project</h3><p>Send the order number with your message so we can keep the conversation clear.</p><Link className="button primary" href={chatHref}>Chat with {admin ? order.clientName : "Riyad"}</Link></div>}

@@ -5,6 +5,17 @@ service firebase.storage {
       return request.auth != null && (request.auth.uid == clientId ||
         firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.admin == true);
     }
+    match /paymentProofs/{orderId}/{clientId}/{installmentId}/{uploadId}/screenshot {
+      function orderOwner() {
+        return request.auth != null && request.auth.uid == clientId
+          && firestore.get(/databases/(default)/documents/orders/$(orderId)).data.clientId == clientId;
+      }
+      allow read: if orderOwner() || (request.auth != null && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.admin == true);
+      allow create: if orderOwner() && installmentId in ['0', '1', '2'] && uploadId.matches('^[a-zA-Z0-9]{20}$')
+        && request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType in ['image/png', 'image/jpeg', 'image/webp'];
+      allow update, delete: if false;
+    }
     match /peer/{chatId}/{senderId}/{messageId}/attachment {
       function member() {
         return request.auth != null && request.auth.uid in

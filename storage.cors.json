@@ -1,7 +1,13 @@
 [
   {
-    "origin": ["http://localhost:3000", "http://192.168.10.224:3000"],
-    "method": ["GET"],
+    "origin": [
+      "http://localhost:3000",
+      "http://192.168.10.224:3000",
+      "https://ninjaaetheriondev.netlify.app"
+    ],
+    "method": [
+      "GET"
+    ],
     "maxAgeSeconds": 3600
   }
 ]
