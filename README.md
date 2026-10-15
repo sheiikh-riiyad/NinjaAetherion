@@ -180,7 +180,7 @@ Business-logic checks: `node --experimental-strip-types --test tests/orders.test
 
 ### Publish to Netlify
 
-`netlify.toml` sets the build command to `npm run build`, publish directory to `.next-netlify`, and Node.js to 22. Its `NETLIFY_BUILD=true` environment setting selects this separate Next.js output folder so local development can continue using `.next`. Netlify automatically applies its Next.js adapter. Keep the Next.js server rendering used by `/messages`; do not drag the raw project or build folder onto Netlify Drop.
+`netlify.toml` sets the build command to `npm run build`, publish directory to `.next-netlify`, and Node.js to 22. Its `NETLIFY_BUILD=true` environment setting selects this separate Next.js output folder so local development can continue using `.next`. The Next.js adapter is explicitly installed and configured in `netlify.toml` so its route handler is packaged even when framework auto-detection is unavailable. Keep the Next.js server rendering used by `/messages`; do not drag the raw project or build folder onto Netlify Drop.
 
 For a CLI deploy, use `npx netlify-cli login`, then `npx netlify-cli deploy --prod` and select/create the intended site. For automatic Git deployments, import `sheiikh-riiyad/NinjaAetherion` in Netlify after pushing the current changes. Local `.netlify` files are ignored by Git.
 
