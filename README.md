@@ -192,3 +192,11 @@ Once the production URL is assigned:
 - Verify Google/email sign-in, client/admin orders, messaging, and attachments on the public URL.
 
 The public Firebase web configuration in `firebaseconfig.js` supplies the defaults. Set the optional `NEXT_PUBLIC_FIREBASE_*` values from `.env.example` in Netlify only to override those defaults. Netlify publishing does not deploy Firebase rules or change bucket CORS.
+
+### Demo payment playground
+
+Open `/demo-payment` to test without creating an order, or choose **Demo payment** in an order's detail tabs. This is an entirely local checkout simulation, not an integration with Visa's sandbox or any live gateway. It does not collect card details, call a payment provider, write to Firestore, or mark orders paid.
+
+Enter a test amount in BDT or USD and choose success, decline, or cancellation. The last result is stored in browser localStorage, scoped by account and order, and can be cleared or downloaded as a plain-text receipt prominently marked DEMO. A browser that blocks localStorage can still run the demo and download a receipt. The displayed amount is independent of the order's budget. No merchant account, API keys, or Firebase rule changes are required.
+
+Validation tests: `node --experimental-strip-types --test tests/demo-payment.test.mjs`.

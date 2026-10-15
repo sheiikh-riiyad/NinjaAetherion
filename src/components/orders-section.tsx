@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, writeBatch, type Timestamp } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
+import { DemoPayment } from "@/components/demo-payment";
 import { getFirebase } from "@/lib/firebase";
 import { publicWorkUrl } from "@/lib/people";
 import { canAdvanceOrder, clientLevel, ORDER_SERVICES, ORDER_STAGES, type OrderStage } from "@/lib/orders";
@@ -17,6 +18,7 @@ export function OrdersSection() {
   const { user, profile, loading, error, retry } = useAuth();
   return <section className="wrap orders-section">
     {loading ? <p role="status">Opening your orders...</p> : !user ? <div className="orders-welcome"><h2>Your next project starts here.</h2><p>Sign in to create an order and follow its progress.</p><Link className="button primary" href="/account">Sign in / Create account</Link></div> : !profile ? <div><p role="alert">{error || "Your account is not available yet."}</p><button className="auth-secondary" onClick={retry}>Try again</button></div> : <OrderDashboard key={`${user.uid}:${profile.admin}`} uid={user.uid} name={profile.name} admin={profile.admin} />}
+    <p className="order-hint">Want to test checkout first? <Link className="text-link" href="/demo-payment">Try a demo payment →</Link></p>
     <PublicReviews />
   </section>;
 }
@@ -86,7 +88,8 @@ function OrderDetails({ order, admin, uid, close }: { order: Order; admin: boole
   return <section ref={panel} className="order-detail" aria-label={`Order details: ${order.title}`}>
     <header><div><p className="eyebrow">ORDER #{order.id.slice(-8).toUpperCase()}</p><h2>{order.title}</h2><p>{order.clientName} · {order.service}</p></div><button className="auth-secondary" onClick={close}>Close details</button></header>
     <ol className="order-timeline" aria-label="Project stages">{ORDER_STAGES.map((stage, index) => <li key={stage} className={index <= ORDER_STAGES.indexOf(order.status) ? "is-complete" : ""} aria-current={stage === order.status ? "step" : undefined}><span>{index < ORDER_STAGES.indexOf(order.status) ? "✓" : index + 1}</span>{stage}</li>)}</ol>
-    <div className="filter-row" aria-label="Order detail tabs">{["Overview", "Progress", "Files", "Messages"].map(value => <button key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{value}</button>)}</div>
+    <div className="filter-row" aria-label="Order detail tabs">{["Overview", "Progress", "Files", "Messages", "Demo payment"].map(value => <button key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{value}</button>)}</div>
+    {tab === "Demo payment" && <DemoPayment key={`${uid}:${order.id}`} orderId={order.id} title={order.title} ownerKey={uid} />}
     {tab === "Overview" && <div className="order-overview"><p>{order.description}</p><dl><div><dt>Budget</dt><dd>{order.budget || "To be discussed"}</dd></div><div><dt>Preferred deadline</dt><dd>{order.deadline || "Flexible"}</dd></div><div><dt>Requested</dt><dd>{date(order.createdAt)}</dd></div></dl>{publicWorkUrl(order.referenceUrl) && <a className="text-link" href={publicWorkUrl(order.referenceUrl)} target="_blank" rel="noopener noreferrer">Open reference ↗</a>}<div className="order-latest"><strong>Latest update</strong><p>{order.update || "Your request is waiting for review."}</p></div></div>}
     {tab === "Progress" && <div className="order-updates"><article><time>{date(order.createdAt)}</time><h3>Requested</h3><p>Your project request was submitted.</p></article>{updates.map(update => <article key={update.id}><time>{date(update.createdAt)}</time><h3>{update.status}</h3><p>{update.note}</p></article>)}{error && <p role="alert" className="orders-error">{error}</p>}</div>}
     {tab === "Files" && <div className="order-latest"><h3>Previews & delivery</h3>{publicWorkUrl(order.deliveryUrl) ? <a className="button primary" href={publicWorkUrl(order.deliveryUrl)} target="_blank" rel="noopener noreferrer">Open project / delivery ↗</a> : <p>Your project link will appear here when it is ready.</p>}<p>Share and download project files in your conversation with Riyad.</p><Link className="auth-secondary" href={chatHref}>Open file sharing</Link></div>}
