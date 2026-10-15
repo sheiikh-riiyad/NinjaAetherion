@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, useRef, useId, type FormEvent } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { collection, doc, onSnapshot, runTransaction, serverTimestamp, setDoc, updateDoc, writeBatch, type Timestamp } from "firebase/firestore";
 import { ref, uploadBytesResumable } from "firebase/storage";
 import { getFirebase } from "@/lib/firebase";
@@ -90,7 +91,59 @@ export function CryptoTransfer({ settings, orderId, index, amountMinor, currency
     finally { setBusy(false); }
   }
   if (!networks.length || !address || settings.coin !== "USDT" || settings.usdRate !== 1 || !quote) return <p>Wallet addresses or the conversion rate for {currency} are not configured. Contact Riyad before transferring funds.</p>;
-  return <form className="contact-form crypto-transfer" onSubmit={submit}><fieldset disabled={busy}><label>Transfer network<select value={network} onChange={event => { setNetwork(event.target.value as CryptoNetwork); setCopyNote(""); }}>{networks.map(value => <option key={value}>{value}</option>)}</select></label><div className="crypto-amount"><span>Send exactly</span><strong>{quote.toFixed(6)} {settings.coin}</strong><small>Quoted at {currency === "USD" ? settings.usdRate : settings.bdtRate} {currency} per {settings.coin}. Account for withdrawal fees so this amount arrives.</small></div><label>Receiving address ({network})<input value={address} readOnly onFocus={event => event.target.select()} /></label><button className="auth-secondary" type="button" onClick={copy}>Copy address</button>{copyNote && <p role="status">{copyNote}</p>}<label>Transaction hash<input name="txid" required maxLength={66} placeholder="Paste the blockchain transaction hash" /></label><label>Payment screenshot (PNG, JPG or WebP, up to 5 MB)<input type="file" accept="image/png,image/jpeg,image/webp" required onChange={event => { const next = event.target.files?.[0]; if (!next) { setFile(null); return; } if (!["image/png", "image/jpeg", "image/webp"].includes(next.type) || !next.size || next.size > 5 * 1024 * 1024 || next.name.length > 255) { setError("Choose a PNG, JPG or WebP screenshot up to 5 MB."); setFile(null); event.target.value = ""; return; } setFile(next); setError(""); }} /></label>{file && <div className="crypto-proof-preview"><AttachmentPreview key={`${file.name}:${file.lastModified}`} file={file} /></div>}<button className="button primary" disabled={!file}>{busy ? `Uploading ${progress}%...` : "Submit screenshot for verification"}</button></fieldset>{error && <p role="alert" className="orders-error">{error}</p>}</form>;
+  return <form className="contact-form crypto-transfer" onSubmit={submit}>
+    <fieldset disabled={busy}>
+      <section className="crypto-step">
+        <h4><span>1</span> Choose your network</h4>
+        <label>USDT network<select value={network} onChange={event => { setNetwork(event.target.value as CryptoNetwork); setCopyNote(""); }}>{networks.map(value => <option key={value}>{value}</option>)}</select></label>
+        <p className="order-hint">Choose the same network in your wallet or exchange.</p>
+      </section>
+      <section className="crypto-step">
+        <h4><span>2</span> Scan &amp; send</h4>
+        <div className="crypto-send-grid">
+          <WalletQrCode address={address} network={network} />
+          <div className="crypto-send-details">
+            <div className="crypto-amount"><span>Amount to receive on {network}</span><strong>{quote.toFixed(6)} USDT</strong><small>{money(amountMinor, currency)} - Allow for withdrawal fees so this exact amount arrives.</small></div>
+            <label>Receiving address<input value={address} readOnly onFocus={event => event.target.select()} /></label>
+            <button className="auth-secondary" type="button" onClick={copy}>Copy address</button>
+            {copyNote && <p role="status">{copyNote}</p>}
+          </div>
+        </div>
+        <p className="crypto-network-note">Send USDT using {network} only. After scanning, check the address, network and amount before confirming.</p>
+      </section>
+      <section className="crypto-step">
+        <h4><span>3</span> Share your payment proof</h4>
+        <p className="order-hint">Already sent it? Add your transfer details below. Riyad will check and confirm your payment.</p>
+        <label>Transaction hash<input name="txid" required maxLength={66} placeholder="Paste the transaction hash from your wallet" /></label>
+        <label>Payment screenshot<input type="file" accept="image/png,image/jpeg,image/webp" required onChange={event => { const next = event.target.files?.[0]; if (!next) { setFile(null); return; } if (!["image/png", "image/jpeg", "image/webp"].includes(next.type) || !next.size || next.size > 5 * 1024 * 1024 || next.name.length > 255) { setError("Choose a PNG, JPG or WebP screenshot up to 5 MB."); setFile(null); event.target.value = ""; return; } setFile(next); setError(""); }} /><small>PNG, JPG or WebP - Up to 5 MB</small></label>
+        {file && <div className="crypto-proof-preview"><AttachmentPreview key={`${file.name}:${file.lastModified}`} file={file} /></div>}
+        <button className="button primary" disabled={!file}>{busy ? `Uploading ${progress}%...` : "Submit payment proof"}</button>
+      </section>
+    </fieldset>
+    {error && <p role="alert" className="orders-error">{error}</p>}
+  </form>;
+}
+
+export function WalletQrCode({ address, network }: { address: string; network: CryptoNetwork }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  return <div className="crypto-qr">
+    <button type="button" className="crypto-qr-trigger" onClick={() => dialog.current?.showModal()} aria-label={`Open QR code for USDT on ${network}`}>
+      <QRCodeSVG value={address} size={172} level="M" marginSize={4} title={`Receiving address on ${network}`} />
+      <span>Open QR code</span>
+    </button>
+    <small>Scan with your wallet</small>
+    <dialog ref={dialog} className="crypto-qr-dialog" aria-labelledby={titleId} onClick={event => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
+      <div className="crypto-qr-modal-content">
+        <button type="button" className="auth-secondary crypto-qr-close" autoFocus onClick={() => dialog.current?.close()} aria-label="Close QR code">Close</button>
+        <h2 id={titleId}>Receive USDT</h2>
+        <p className="crypto-qr-network">{network} network</p>
+        <QRCodeSVG value={address} size={280} level="M" marginSize={4} title={`USDT ${network} receiving address`} />
+        <code>{address}</code>
+        <p>Scan to fill the address. Select {network} and enter the amount shown in your payment details.</p>
+      </div>
+    </dialog>
+  </div>;
 }
 
 function EvidenceCard({ orderId, evidence, admin }: { orderId: string; evidence: Evidence; admin: boolean }) {
