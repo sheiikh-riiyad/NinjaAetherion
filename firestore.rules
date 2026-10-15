@@ -100,15 +100,16 @@ service cloud.firestore {
           let data = request.resource.data;
           let wallet = get(/databases/$(database)/documents/payment/binance).data;
           let field = data.network == 'TRC20' ? 'trc20Address' : data.network == 'BEP20' ? 'bep20Address' : 'polygonAddress';
-          let address = wallet[field] == '' ? wallet.address : wallet[field];
-          let rate = order().currency == 'USD' ? wallet.usdRate : wallet.bdtRate;
+          let specific = wallet.get(field, '');
+          let address = (specific == '' ? wallet.get('address', '') : specific).trim();
+          let rate = order().currency == 'USD' ? wallet.get('usdRate', 1) : wallet.get('bdtRate', 0);
           return request.auth != null && order().clientId == request.auth.uid && order().paymentMode == 'crypto'
             && installmentId in ['0', '1', '2'] && due()
             && data.keys().hasAll(['clientId', 'installment', 'status', 'amountMinor', 'currency', 'coin', 'network', 'address', 'cryptoAmount', 'rate', 'txid', 'screenshot', 'createdAt'])
             && data.keys().hasOnly(['clientId', 'installment', 'status', 'amountMinor', 'currency', 'coin', 'network', 'address', 'cryptoAmount', 'rate', 'txid', 'screenshot', 'createdAt'])
             && data.clientId == request.auth.uid && data.installment is int && string(data.installment) == installmentId
             && data.status == 'pending' && data.amountMinor == expectedAmount() && data.currency == order().currency
-            && data.network in ['TRC20', 'BEP20', 'Polygon'] && data.coin == wallet.coin && data.address == address
+            && data.network in ['TRC20', 'BEP20', 'Polygon'] && data.coin == 'USDT' && data.coin == wallet.get('coin', 'USDT') && data.address == address
             && (data.network == 'TRC20' ? data.address.matches('^T[1-9A-HJ-NP-Za-km-z]{33}$') : data.address.matches('^0x[a-fA-F0-9]{40}$'))
             && data.rate == rate && rate > 0 && data.cryptoAmount is number && data.cryptoAmount > 0
             && data.cryptoAmount >= expectedAmount() / 100.0 / rate - 0.000000001

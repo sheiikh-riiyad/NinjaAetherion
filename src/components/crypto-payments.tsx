@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { collection, doc, onSnapshot, runTransaction, serverTimestamp, setDoc, updateDoc, writeBatch, type Timestamp } from "firebase/firestore";
 import { ref, uploadBytesResumable } from "firebase/storage";
 import { getFirebase } from "@/lib/firebase";
-import { CRYPTO_NETWORKS, cryptoQuote, walletAddress, type CryptoNetwork, type WalletSettings } from "@/lib/crypto-payment";
+import { CRYPTO_NETWORKS, cryptoQuote, normalizeWalletSettings, walletAddress, type CryptoNetwork, type WalletSettings } from "@/lib/crypto-payment";
 import { installments, parseOrderBudget, type Currency } from "@/lib/installments";
 import { demoAmountMinor } from "@/lib/demo-payment";
 import type { OrderStage } from "@/lib/orders";
@@ -33,7 +33,7 @@ export function EnableLegacyCrypto({ orderId, budget, status }: { orderId: strin
 }
 export function useWalletSettings() {
   const [state, setState] = useState<{ settings: WalletSettings | null; loading: boolean; error: string }>({ settings: null, loading: true, error: "" });
-  useEffect(() => onSnapshot(doc(getFirebase().db, "payment", "binance"), { includeMetadataChanges: true }, snapshot => setState({ settings: snapshot.exists() ? snapshot.data() as WalletSettings : null, loading: snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites, error: "" }), () => setState({ settings: null, loading: false, error: "Wallet settings are unavailable. Please contact Riyad before sending funds." })), []);
+  useEffect(() => onSnapshot(doc(getFirebase().db, "payment", "binance"), { includeMetadataChanges: true }, snapshot => setState({ settings: snapshot.exists() ? normalizeWalletSettings(snapshot.data()) : null, loading: snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites, error: "" }), () => setState({ settings: null, loading: false, error: "Wallet settings are unavailable. Please contact Riyad before sending funds." })), []);
   return state;
 }
 export function CryptoWalletEditor() {

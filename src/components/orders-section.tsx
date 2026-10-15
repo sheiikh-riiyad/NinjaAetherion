@@ -6,7 +6,7 @@ import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, se
 import { useAuth } from "@/components/auth-provider";
 import { CryptoPaymentPlan, CryptoWalletEditor, EnableLegacyCrypto, useWalletSettings } from "@/components/crypto-payments";
 import { InstallmentSummary, money } from "@/components/installment-payments";
-import { CRYPTO_NETWORKS, cryptoQuote, walletAddress } from "@/lib/crypto-payment";
+import { walletCheckoutIssue } from "@/lib/crypto-payment";
 import { demoAmountMinor } from "@/lib/demo-payment";
 import { type Currency } from "@/lib/installments";
 import { getFirebase } from "@/lib/firebase";
@@ -61,7 +61,8 @@ function CreateOrder({ uid, name, done }: { uid: string; name: string; done: (id
   const total = demoAmountMinor(budget);
   const validBudget = total !== null && total >= 100;
   const wallet = useWalletSettings();
-  const walletReady = !wallet.loading && !!wallet.settings && wallet.settings.coin === "USDT" && wallet.settings.usdRate === 1 && CRYPTO_NETWORKS.some(network => walletAddress(wallet.settings!, network)) && !!cryptoQuote(total || 0, currency, wallet.settings);
+  const walletIssue = wallet.error || walletCheckoutIssue(wallet.settings, currency);
+  const walletReady = !wallet.loading && !walletIssue;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -70,7 +71,7 @@ function CreateOrder({ uid, name, done }: { uid: string; name: string; done: (id
     const title = String(data.get("title") || "").trim(); const description = String(data.get("description") || "").trim();
     const referenceUrl = String(data.get("referenceUrl") || "").trim();
     if (!validBudget) { setError("Enter a project budget from 1.00 to 999,999.99."); return; }
-    if (!walletReady) { setError("Crypto checkout is not configured for this currency yet. Contact Riyad before sending money."); return; }
+    if (!walletReady) { setError(walletIssue || "Waiting for payment settings. Please try again shortly."); return; }
     if (!title || !description) { setError("Enter a title and project description."); return; }
     if (referenceUrl && !publicWorkUrl(referenceUrl)) { setError("Enter a full HTTP or HTTPS reference URL."); return; }
     setBusy(true); setError("");
@@ -92,7 +93,7 @@ function CreateOrder({ uid, name, done }: { uid: string; name: string; done: (id
   </fieldset></form>
     {validBudget ? <><InstallmentSummary total={total!} currency={currency} /><div className="crypto-notice">Pay the 20% deposit by crypto after saving this order. The next screen shows your receiving address and lets you attach a screenshot and transaction hash. Work starts after Riyad verifies the transfer.</div></> : <p className="orders-error">Enter a numeric budget of at least 1.00 to see your payment plan.</p>}
     {wallet.loading && <p role="status">Loading crypto checkout settings...</p>}
-    {!wallet.loading && !walletReady && <p role="alert" className="orders-error">{wallet.error || "Crypto checkout is not configured for this currency yet. Contact Riyad before sending funds."}</p>}
+    {!wallet.loading && walletIssue && <p role="alert" className="orders-error">{walletIssue}</p>}
     <button form={`create-order-${draftId}`} className="button primary" disabled={busy || !validBudget || !walletReady}>{busy ? "Saving order..." : "Continue to 20% crypto deposit"}</button>
     {error && <p className="orders-error" role="alert">{error}</p>}</section>;
 }

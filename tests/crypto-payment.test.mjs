@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { validNetworkAddress, walletAddress, cryptoQuote } from "../src/lib/crypto-payment.ts";
+import { validNetworkAddress, walletAddress, cryptoQuote, normalizeWalletSettings, walletCheckoutIssue } from "../src/lib/crypto-payment.ts";
 const common = "0x" + "a".repeat(40);
 const tron = "T" + "A".repeat(33);
 const settings = { address: common, trc20Address: tron, bep20Address: "", polygonAddress: "", coin: "USDT", usdRate: 1, bdtRate: 120 };
+test("the original address-only document enables the agreed USD-to-USDT checkout", () => {
+  const legacy = normalizeWalletSettings({ address: ` ${common} ` });
+  assert.equal(walletCheckoutIssue(legacy, "USD"), "");
+  assert.equal(cryptoQuote(40000, "USD", legacy), 400);
+  assert.match(walletCheckoutIssue(legacy, "BDT"), /Choose USD/);
+  assert.equal(walletAddress(legacy, "TRC20"), "");
+  assert.match(walletCheckoutIssue(normalizeWalletSettings({ address: "placeholder" }), "USD"), /receiving wallet/);
+  assert.match(walletCheckoutIssue(normalizeWalletSettings({ address: common, coin: "BTC" }), "USD"), /USDT payment quote/);
+  assert.match(walletCheckoutIssue(null, "USD"), /not set up/);
+});
 test("common addresses are never reused across incompatible network formats", () => {
   assert.equal(walletAddress(settings, "BEP20"), common);
   assert.equal(walletAddress(settings, "Polygon"), common);

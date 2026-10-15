@@ -66,4 +66,9 @@ test("crypto proofs enforce ownership, amounts, stages, admin review and unique 
   await commit(admin, [write(`cryptoTransactions/BEP20_${finalHash}`, { orderId, installment: 2, network: "BEP20", txid: finalHash }, ["verifiedAt"]), write(`orders/${orderId}/cryptoPayments/2`, { status: "verified" }, ["reviewedAt"], ["status"])]);
   const privateProof = await fetch(`${endpoint}/${proofPath}`, { headers: { authorization: `Bearer ${other}` } });
   assert.equal(privateProof.status, 403);
+  // Existing installations may contain only payment/binance/address.
+  await commit("owner", [write("payment/binance", { address: ` ${address} ` })]);
+  const legacyWalletOrder = `${orderId}-address-only`;
+  await commit(client, [write(`orders/${legacyWalletOrder}`, { ...order, budget: "USD 2000.00", budgetMinor: 200000 }, ["createdAt", "updatedAt"])]);
+  await commit(client, [write(`orders/${legacyWalletOrder}/cryptoPayments/0`, { ...evidence, amountMinor: 40000, cryptoAmount: 400, network: "Polygon", txid: createHash("sha256").update(legacyWalletOrder).digest("hex"), screenshot: { ...evidence.screenshot, path: `paymentProofs/${legacyWalletOrder}/client1/0/${"D".repeat(20)}/screenshot` } }, ["createdAt"])]);
 });
