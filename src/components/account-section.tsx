@@ -6,6 +6,7 @@ import { FirebaseError } from "firebase/app";
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword, signOut, updateProfile } from "firebase/auth";
 import { doc, updateDoc } from "firebase/firestore";
 import { AdminUsers } from "@/components/account-chat";
+import { ClientProfile } from "@/components/client-profile";
 import { UnreadBadge } from "@/components/unread-provider";
 import { ensureUserProfile, useAuth } from "@/components/auth-provider";
 import { firebaseConfigured, getFirebase, signInWithGoogle } from "@/lib/firebase";
@@ -95,6 +96,8 @@ export function AccountSection({ adminOnly = false }: { adminOnly?: boolean }) {
 
   if (!firebaseConfigured) return <section className="wrap account-section"><div className="auth-card"><h2>Accounts are coming soon.</h2><p>Sign-in is not available yet. Please check back shortly.</p></div></section>;
   if (loading) return <section className="wrap account-section"><p role="status">Loading your account…</p></section>;
+
+  if (user && profile && !profile.admin && !adminOnly) return <ClientProfile key={user.uid} user={user} name={profile.name} busy={busy} notice={notice} failure={failure} authError={error} saveName={saveName} logout={logout} retry={retry} />;
 
   return <section className="wrap account-section"><div className="auth-card">
     {user ? <>
