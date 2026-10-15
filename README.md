@@ -177,3 +177,18 @@ Data is stored in `orders/{orderId}`, its `updates` subcollection, and `orderRev
 Deploy `firestore.rules` before using orders: `firebase deploy --only firestore:rules --project ninjaaetherion`. No additional composite index is required by the current queries. Verify create/update/review flows with separate client and admin accounts after deployment; live Firebase writes and rules execution are not covered by the local build.
 
 Business-logic checks: `node --experimental-strip-types --test tests/orders.test.mjs`.
+
+### Publish to Netlify
+
+`netlify.toml` sets the build command to `npm run build`, publish directory to `.next-netlify`, and Node.js to 22. Its `NETLIFY_BUILD=true` environment setting selects this separate Next.js output folder so local development can continue using `.next`. Netlify automatically applies its Next.js adapter. Keep the Next.js server rendering used by `/messages`; do not drag the raw project or build folder onto Netlify Drop.
+
+For a CLI deploy, use `npx netlify-cli login`, then `npx netlify-cli deploy --prod` and select/create the intended site. For automatic Git deployments, import `sheiikh-riiyad/NinjaAetherion` in Netlify after pushing the current changes. Local `.netlify` files are ignored by Git.
+
+Once the production URL is assigned:
+
+- Add its hostname (without `https://`) under Firebase Authentication > Settings > Authorized domains so Google sign-in works.
+- Add the full HTTPS origin to `storage.cors.json`, then apply the bucket CORS settings using the existing Storage instructions.
+- Deploy the current Firestore and Storage rules for orders, connected people, messaging, and attachments.
+- Verify Google/email sign-in, client/admin orders, messaging, and attachments on the public URL.
+
+The public Firebase web configuration in `firebaseconfig.js` supplies the defaults. Set the optional `NEXT_PUBLIC_FIREBASE_*` values from `.env.example` in Netlify only to override those defaults. Netlify publishing does not deploy Firebase rules or change bucket CORS.

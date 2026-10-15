@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next-netlify/
 /out/
 
 # production
@@ -36,6 +37,9 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# Netlify local credentials, site link, and generated deployment files
+.netlify/
 
 # typescript
 *.tsbuildinfo
