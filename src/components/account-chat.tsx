@@ -14,7 +14,7 @@ type Account = { uid: string; name: string; email: string; admin: boolean };
 type Reply = { messageId: string; text: string; senderId: string };
 type Message = { id: string; text: string; senderId: string; createdAt: Timestamp | null; pending: boolean; attachment?: Attachment; reply?: Reply };
 
-export function AccountChat({ clientId, clientName, onBack }: { clientId: string; clientName: string; onBack?: () => void }) {
+export function AccountChat({ clientId, clientName, onBack, peerChatId }: { clientId: string; clientName: string; onBack?: () => void; peerChatId?: string }) {
   const { user, profile } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
@@ -38,8 +38,8 @@ export function AccountChat({ clientId, clientName, onBack }: { clientId: string
   const messageList = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!user || !profile || (!profile.admin && clientId !== user.uid)) return;
-    const messagesQuery = query(collection(getFirebase().db, "users", clientId, "messages"), orderBy("createdAt", "desc"), limit(100));
+    if (!user || !profile || (!peerChatId && !profile.admin && clientId !== user.uid)) return;
+    const messagesQuery = query(peerChatId ? collection(getFirebase().db, "peerChats", peerChatId, "messages") : collection(getFirebase().db, "users", clientId, "messages"), orderBy("createdAt", "desc"), limit(100));
     return onSnapshot(messagesQuery, { includeMetadataChanges: true }, snapshot => {
       setMessages(snapshot.docs.map(document => ({
         id: document.id,
@@ -57,7 +57,7 @@ export function AccountChat({ clientId, clientName, onBack }: { clientId: string
       setLoading(false);
       setReadError("Unable to load this conversation. Please try reloading the page.");
     });
-  }, [clientId, user, profile]);
+  }, [clientId, user, profile, peerChatId]);
 
   useEffect(() => { const list = messageList.current; if (list) list.scrollTop = list.scrollHeight; }, [messages]);
 
@@ -67,13 +67,13 @@ export function AccountChat({ clientId, clientName, onBack }: { clientId: string
     let alive = true;
     function markVisible() {
       if (document.visibilityState !== "visible" || !document.hasFocus() || !messageList.current?.getClientRects().length) return;
-      void markChatRead(clientId, user!.uid, latest!).then(() => { if (alive) setReceiptError(""); }).catch(() => { if (alive) setReceiptError("Unable to mark messages as read. Reopen the chat to try again."); });
+      void markChatRead(clientId, user!.uid, latest!, peerChatId).then(() => { if (alive) setReceiptError(""); }).catch(() => { if (alive) setReceiptError("Unable to mark messages as read. Reopen the chat to try again."); });
     }
     markVisible();
     document.addEventListener("visibilitychange", markVisible);
     window.addEventListener("focus", markVisible);
     return () => { alive = false; document.removeEventListener("visibilitychange", markVisible); window.removeEventListener("focus", markVisible); };
-  }, [messages, user, clientId, loading, readError]);
+  }, [messages, user, clientId, loading, readError, peerChatId]);
 
   async function send(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -82,10 +82,10 @@ export function AccountChat({ clientId, clientName, onBack }: { clientId: string
     setSending(true); setSendError("");
     try {
       const { db, storage } = getFirebase();
-      const messageRef = doc(collection(db, "users", clientId, "messages"));
+      const messageRef = doc(peerChatId ? collection(db, "peerChats", peerChatId, "messages") : collection(db, "users", clientId, "messages"));
       let attachment: Attachment | undefined;
       if (file) {
-        const path = `chat/${clientId}/${user.uid}/${messageRef.id}/attachment`;
+        const path = `${peerChatId ? `peer/${peerChatId}` : `chat/${clientId}`}/${user.uid}/${messageRef.id}/attachment`;
         setProgress(0);
         const task = uploadBytesResumable(ref(storage, path), file, { contentType: file.type || "application/octet-stream" });
         await new Promise<void>((resolve, reject) => task.on("state_changed", snapshot => setProgress(Math.round(snapshot.bytesTransferred / snapshot.totalBytes * 100)), reject, resolve));
@@ -103,13 +103,13 @@ export function AccountChat({ clientId, clientName, onBack }: { clientId: string
     finally { setSending(false); }
   }
 
-  if (!user || !profile || (!profile.admin && clientId !== user.uid)) return null;
+  if (!user || !profile || (!peerChatId && !profile.admin && clientId !== user.uid)) return null;
 
   return <section className="messenger-thread" aria-label={`Chat with ${clientName}`}>
     <header className="messenger-thread-header">
       {onBack && <button className="messenger-back" aria-label="Back to conversations" onClick={onBack}>←</button>}
       <span className="messenger-avatar" aria-hidden="true">{clientName.slice(0, 1).toUpperCase()}</span>
-      <div><h2>{clientName}</h2><p><PresenceStatus uid={profile.admin ? clientId : undefined} /></p></div>
+      <div><h2>{clientName}</h2><p>{peerChatId ? "Client conversation" : <PresenceStatus uid={profile.admin ? clientId : undefined} />}</p></div>
       <span className="messenger-header-note">PRIVATE CHAT</span>
     </header>
     <div ref={messageList} className="messenger-messages" role="log" aria-label="Messages" aria-live="polite" aria-busy={loading}>

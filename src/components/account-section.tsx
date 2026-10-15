@@ -104,8 +104,8 @@ export function AccountSection({ adminOnly = false }: { adminOnly?: boolean }) {
       {adminOnly && !profile?.admin && <p>This section is available to the site administrator.</p>}
       {profile && !adminOnly && <form className="contact-form" onSubmit={saveName}><label>Your name<input key={profile.name} name="name" defaultValue={profile.name || user.displayName || ""} required maxLength={100} autoComplete="name" /></label><button className="button primary" disabled={busy}>Save profile</button></form>}
       <div className="auth-actions">{!adminOnly && profile?.admin && <Link className="button primary" href="/admin">Open admin area ↗</Link>}<button className="auth-secondary" disabled={busy} onClick={logout}>Sign out</button>{adminOnly && <Link className="text-link" href="/account">My account ↗</Link>}</div>
-      {profile?.admin && <AdminUsers key={user.uid} />}
-      {profile && <div className="auth-actions"><Link href="/messages" className="button primary">Open messages <UnreadBadge /> ↗</Link></div>}
+      {profile?.admin && <><div className="auth-actions"><Link className="auth-secondary" href="/people">Manage connected people</Link></div><AdminUsers key={user.uid} /></>}
+      {profile && <div className="auth-actions"><Link href="/orders" className="button primary">{profile.admin ? "Manage orders" : "My orders"}</Link><Link href="/messages" className="auth-secondary">Open messages <UnreadBadge /> ↗</Link></div>}
     </> : <>
       <div className="filter-row" aria-label="Account options">{(["login", "register", "reset"] as const).filter(value => !adminOnly || value !== "register").map(value => <button key={value} aria-pressed={mode === value} disabled={busy} onClick={() => { setMode(value); setNotice(""); setFailure(""); }}>{value === "login" ? "Sign in" : value === "register" ? "Create account" : "Reset password"}</button>)}</div>
       <h2>{mode === "register" ? "Let’s get started." : mode === "reset" ? "Forgot your password?" : adminOnly ? "Admin sign in." : "Welcome back."}</h2>

@@ -152,3 +152,28 @@ Before using attachments:
 3. Configure bucket CORS for authenticated browser downloads. Add your production origin to `storage.cors.json`, then run `gcloud storage buckets update gs://ninjaaetherion.firebasestorage.app --cors-file=storage.cors.json` with an authorized Google Cloud account. The supplied origins cover localhost and the current LAN URL.
 
 Rules restrict uploads and downloads to the client and admins, and cap uploads at 20 MB. If uploading succeeds but saving the message fails, retrying uploads a new object; the earlier object can remain orphaned. These objects need periodic bucket cleanup if failed sends become frequent. Live uploads require the above Firebase configuration and are not verified by the local build.
+
+
+### Connected People and client chats
+
+`/people` is a public directory. Sign in as admin, open **Manage connected clients**, choose a registered client, and publish their public name, work title, description, and optional HTTP(S) URL. You can edit or remove listings there. No account emails or admin flags are copied into the public directory. Existing users are not published automatically.
+
+Signed-in accounts can start a private conversation with a listed client. Both participants can continue their conversation from the Client conversations inbox, including after a listing is removed. Replies, attachments, and per-conversation unread counts use the shared messenger UI. Public visitors can view work without signing in; messaging requires an account. Client chats are separate from the existing owner/client messages. Only the two members can read each client chat or its attachments, including when another account is an administrator.
+
+Data: `connectedPeople/{uid}` holds admin-managed public work details; `peerChats/{chatId}` holds immutable members and display names; messages and each participant's read cursor are stored in its `messages` and `chatReads` subcollections. The current display name of the initiator and published name of the recipient are captured when a chat starts. They do not automatically change in older inbox entries.
+
+Publish the updated rules before using this feature: `firebase deploy --only firestore:rules,storage --project ninjaaetherion`. Existing Storage/CORS setup also applies to peer attachments. No additional composite index is required by the membership query. Production rule deployment and live multi-account testing require an authorized Firebase session.
+
+### Orders, client levels, and reviews
+
+Open `/orders` to create requests (client accounts) or manage all projects (admin accounts). Clients submit a service, title, description, optional budget/deadline, and reference link. The dashboard filters orders by stage and opens Overview, Progress, Files, and Messages tabs.
+
+Admins post an update while keeping the current stage or advancing one step: Requested, Accepted, Building, Review, Delivered. Progress notes are appended as immutable history in the same batch as the order update. Preview/delivery URLs appear in Files; actual attachment sharing uses the existing private owner/client chat. These conversations are shared across the client's orders, so the UI asks users to include the order number.
+
+Client levels derive from delivered orders: 0-1 New Client, 2-4 Returning Client, 5+ Trusted Partner. Clients cannot change order status. After delivery, the order owner can submit one review with separate work-quality and website-experience ratings (1-5). Reviews are private by default. Explicit consent publishes the reviewer's captured name, ratings, and text in the public reviews section. Reviews cannot currently be edited or deleted in the app. Public reviews show up to 20 entries.
+
+Data is stored in `orders/{orderId}`, its `updates` subcollection, and `orderReviews/{orderId}`. Only the owner and admins can read an order. Anyone can read a review marked public; private reviews are limited to the owner and admins. No payment processing is included.
+
+Deploy `firestore.rules` before using orders: `firebase deploy --only firestore:rules --project ninjaaetherion`. No additional composite index is required by the current queries. Verify create/update/review flows with separate client and admin accounts after deployment; live Firebase writes and rules execution are not covered by the local build.
+
+Business-logic checks: `node --experimental-strip-types --test tests/orders.test.mjs`.

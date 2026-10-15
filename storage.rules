@@ -5,6 +5,17 @@ service firebase.storage {
       return request.auth != null && (request.auth.uid == clientId ||
         firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.admin == true);
     }
+    match /peer/{chatId}/{senderId}/{messageId}/attachment {
+      function member() {
+        return request.auth != null && request.auth.uid in
+          firestore.get(/databases/(default)/documents/peerChats/$(chatId)).data.members;
+      }
+      allow read: if member();
+      allow create: if member() && request.auth.uid == senderId
+        && request.resource.size > 0 && request.resource.size <= 20 * 1024 * 1024
+        && request.resource.contentType.size() <= 255;
+      allow update, delete: if false;
+    }
     match /chat/{clientId}/{senderId}/{messageId}/attachment {
       allow read: if canChat(clientId);
       allow create: if canChat(clientId) && request.auth.uid == senderId
