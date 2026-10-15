@@ -200,3 +200,11 @@ Open `/demo-payment` to test without creating an order, or choose **Demo payment
 Enter a test amount in BDT or USD and choose success, decline, or cancellation. The last result is stored in browser localStorage, scoped by account and order, and can be cleared or downloaded as a plain-text receipt prominently marked DEMO. A browser that blocks localStorage can still run the demo and download a receipt. The displayed amount is independent of the order's budget. No merchant account, API keys, or Firebase rule changes are required.
 
 Validation tests: `node --experimental-strip-types --test tests/demo-payment.test.mjs`.
+
+### Demo order installments: 20% / 50% / 30%
+
+Create Order now requires a numeric BDT or USD budget of 1.00-999,999.99 and displays the payment plan. A successful 20% deposit simulation unlocks order submission. The same order ID and budget-specific receipt key are carried into its Payments tab. New budgets are stored as canonical strings (for example `BDT 10000.00`) using the existing Firestore schema; no rule update is needed. Older grouped budgets such as `BDT 20,000` are supported. Orders without a supported numeric currency/budget show an explanatory message.
+
+The next 50% unlocks when the admin advances the order to Review. The final 30% unlocks at Delivered after both earlier demo installments. Installment amounts and currency are fixed by the order budget. Rounding is applied in minor units and the final installment takes the remainder so the amounts always sum to the budget. Changing the budget/currency creates separate receipt keys. Clearing or failing an earlier simulation clears downstream demo results.
+
+All payment results remain browser-only demo receipts. The create-order check and installment unlocks are UI testing behavior, not verified payment enforcement. No money is collected, no paid flag is stored in Firestore, and administrators cannot see another browser's demo results. A real gateway with server-verified payments is still required before collecting installments from clients. The public `/demo-payment` playground now lets you test the entire installment sequence with simulated project stages.

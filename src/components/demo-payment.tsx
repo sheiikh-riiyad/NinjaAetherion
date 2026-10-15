@@ -8,13 +8,13 @@ function subscribe(callback: () => void) {
   return () => { window.removeEventListener("storage", callback); window.removeEventListener("demo-payment-change", callback); };
 }
 
-export function DemoPayment({ orderId = "practice-order", title = "Practice project payment", ownerKey = "guest" }: { orderId?: string; title?: string; ownerKey?: string }) {
+export function DemoPayment({ orderId = "practice-order", title = "Practice project payment", ownerKey = "guest", fixedAmountMinor, fixedCurrency, onComplete }: { orderId?: string; title?: string; ownerKey?: string; fixedAmountMinor?: number; fixedCurrency?: "BDT" | "USD"; onComplete?: (receipt: DemoReceipt | null) => void }) {
   const key = `aetherion:demo-payment:${ownerKey}:${orderId}`;
   const stored = useSyncExternalStore(subscribe, () => { try { return localStorage.getItem(key); } catch { return null; } }, () => null);
   const saved = readDemoReceipt(stored, orderId);
   const [current, setCurrent] = useState<DemoReceipt | null>(null);
-  const [amount, setAmount] = useState("1000.00");
-  const [currency, setCurrency] = useState<"BDT" | "USD">("BDT");
+  const [amount, setAmount] = useState(fixedAmountMinor === undefined ? "1000.00" : (fixedAmountMinor / 100).toFixed(2));
+  const [currency, setCurrency] = useState<"BDT" | "USD">(fixedCurrency || "BDT");
   const [outcome, setOutcome] = useState<DemoOutcome>("success");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -25,12 +25,13 @@ export function DemoPayment({ orderId = "practice-order", title = "Practice proj
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (timer.current) return;
-    const amountMinor = demoAmountMinor(amount);
+    const amountMinor = fixedAmountMinor ?? demoAmountMinor(amount);
     if (amountMinor === null) { setError("Enter a demo amount from 0.01 to 999,999.99, with up to two decimal places."); return; }
     setBusy(true); setError(""); setStorageNote("");
     timer.current = setTimeout(() => {
       const result: DemoReceipt = { mode: "demo", orderId, reference: `DEMO-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`, amountMinor, currency, outcome, createdAt: new Date().toISOString() };
       setCurrent(result);
+      onComplete?.(result);
       try { localStorage.setItem(key, JSON.stringify(result)); window.dispatchEvent(new Event("demo-payment-change")); }
       catch { setStorageNote("This browser could not save the result. You can still download the demo receipt."); }
       timer.current = null; setBusy(false);
@@ -39,7 +40,7 @@ export function DemoPayment({ orderId = "practice-order", title = "Practice proj
   function reset() {
     try { localStorage.removeItem(key); window.dispatchEvent(new Event("demo-payment-change")); }
     catch { setStorageNote("This browser could not clear its saved demo result."); }
-    setCurrent(null); setError("");
+    setCurrent(null); setError(""); onComplete?.(null);
   }
   function download() {
     if (!receipt) return;
@@ -52,7 +53,7 @@ export function DemoPayment({ orderId = "practice-order", title = "Practice proj
     <div className="demo-payment-notice">No money is charged. This is a local simulation, separate from Visa&apos;s sandbox. Use the built-in test method; no card details are needed.</div>
     <div className="demo-checkout-grid"><form className="contact-form demo-payment-form" onSubmit={submit}><fieldset disabled={busy}>
       <div className="demo-project"><span>PROJECT</span><h3>{title}</h3><small>Order #{orderId.slice(-12).toUpperCase()}</small></div>
-      <div className="order-form-pair"><label>Demo amount<input inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} maxLength={9} required aria-describedby="demo-amount-note" /></label><label>Currency<select value={currency} onChange={event => setCurrency(event.target.value as "BDT" | "USD")}><option>BDT</option><option>USD</option></select></label></div>
+      <div className="order-form-pair"><label>Demo amount<input inputMode="decimal" value={amount} readOnly={fixedAmountMinor !== undefined} onChange={event => setAmount(event.target.value)} maxLength={9} required aria-describedby="demo-amount-note" /></label><label>Currency<select value={currency} disabled={fixedCurrency !== undefined} onChange={event => setCurrency(event.target.value as "BDT" | "USD")}><option>BDT</option><option>USD</option></select></label></div>
       <p id="demo-amount-note" className="order-hint">Test amount only. Your order budget and project status stay unchanged.</p>
       <div className="demo-test-method"><span aria-hidden="true">▣</span><div><strong>Built-in demo card</strong><p>Test payment method · No real card connected</p></div><span className="demo-mode-badge">DEMO</span></div>
       <fieldset className="demo-scenarios"><legend>Choose what to test</legend>{([["success", "Successful payment", "Show a demo confirmation and receipt."], ["declined", "Declined payment", "Try the failed-payment experience."], ["cancelled", "Cancelled checkout", "Test leaving checkout without paying."]] as const).map(([value, label, description]) => <label key={value}><input type="radio" name="demo-outcome" value={value} checked={outcome === value} onChange={() => setOutcome(value)} /><span><strong>{label}</strong><small>{description}</small></span></label>)}</fieldset>
